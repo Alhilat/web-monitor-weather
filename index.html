@@ -1,168 +1,364 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>ESP32 Weather Station</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Environment Monitor</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #f4f4f9; color: #333; }
-        
-        /* Container for the charts */
-        .chart-container {
-            width: 80%;
-            margin: 20px auto;
-            display: flex;
-            justify-content: space-between;
-            gap: 20px;
-        }
-        .chart-box {
-            width: 48%;
-            background: white;
-            padding: 15px;
-            box-shadow: 0 0 15px rgba(0,0,0,0.1);
-            border-radius: 8px;
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-temp: #f59e0b; /* Amber */
+            --accent-hum: #0ea5e9;  /* Sky Blue */
+            --border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        /* Table Styling */
-        table { margin: 40px auto; border-collapse: collapse; width: 80%; background: white; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
-        th, td { padding: 12px 15px; border-bottom: 1px solid #ddd; }
-        th { background-color: #009879; color: white; }
-        tr:nth-child(even) { background-color: #f3f3f3; }
-        tr:hover { background-color: #f1f1f1; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        /* Layout Grid */
+        .dashboard {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        /* Header */
+        .header {
+            grid-column: span 4;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .header h1 { font-weight: 600; font-size: 1.5rem; margin: 0; }
+        .last-update { font-size: 0.85rem; color: var(--text-muted); background: var(--card-bg); padding: 5px 12px; border-radius: 20px; border: var(--border); }
+        .spin { animation: spin 1s linear infinite; display: none; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        /* Cards */
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: 16px;
+            padding: 20px;
+            border: var(--border);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        /* KPI Stats */
+        .kpi-card {
+            grid-column: span 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .kpi-title { font-size: 0.9rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+        .kpi-value { font-size: 2.5rem; font-weight: 700; margin: 10px 0; }
+        .kpi-icon { position: absolute; right: -10px; bottom: -10px; font-size: 5rem; opacity: 0.1; }
         
-        h1 { margin-top: 30px; }
-        .status { margin-bottom: 20px; color: #666; font-style: italic; }
+        /* Specific Colors */
+        .temp-val { color: var(--accent-temp); }
+        .hum-val { color: var(--accent-hum); }
+
+        /* Chart Section */
+        .chart-container {
+            grid-column: span 2;
+            height: 350px;
+            position: relative;
+        }
+
+        /* Table Section */
+        .table-container {
+            grid-column: span 4;
+            max-height: 400px;
+            overflow-y: auto;
+        }
         
-        /* Responsive design for small screens */
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th { position: sticky; top: 0; background: #1e293b; color: var(--text-muted); padding: 12px; font-size: 0.85rem; z-index: 10; }
+        td { padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.9rem; }
+        tr:hover { background: rgba(255,255,255,0.05); }
+
+        /* Loader */
+        .loader-overlay {
+            position: fixed; inset: 0; background: var(--bg-color);
+            display: flex; justify-content: center; align-items: center; z-index: 999;
+            transition: opacity 0.5s ease;
+        }
+
+        /* Mobile Responsive */
         @media (max-width: 768px) {
-            .chart-container { flex-direction: column; }
-            .chart-box { width: 90%; margin: 10px auto; }
+            .dashboard { grid-template-columns: 1fr; }
+            .kpi-card, .chart-container, .table-container, .header { grid-column: span 1; }
+            .kpi-card { flex-direction: row; justify-content: space-between; align-items: center; }
+            .kpi-icon { position: static; font-size: 2rem; opacity: 1; }
         }
     </style>
 </head>
 <body>
 
-    <h1>ESP32 Weather Dashboard</h1>
-    <div class="status" id="status">Loading data...</div>
-
-    <div class="chart-container">
-        <div class="chart-box">
-            <canvas id="tempChart"></canvas>
-        </div>
-        <div class="chart-box">
-            <canvas id="humChart"></canvas>
+    <div class="loader-overlay" id="fullPageLoader">
+        <div style="color:white; font-size: 1.2rem;">
+            <i class="fas fa-circle-notch fa-spin"></i> Connecting to ESP32...
         </div>
     </div>
 
-    <table id="dataTable">
-        <thead>
-            <tr>
-                <th>Date/Time</th>
-                <th>Temperature (°C)</th>
-                <th>Humidity (%)</th>
-            </tr>
-        </thead>
-        <tbody>
-            </tbody>
-    </table>
+    <div class="dashboard">
+        <div class="header">
+            <div>
+                <h1><i class="fas fa-satellite-dish"></i> Weather Station</h1>
+            </div>
+            <div class="last-update">
+                <i class="fas fa-sync-alt" id="refreshIcon"></i> 
+                <span id="lastUpdated">Updating...</span>
+            </div>
+        </div>
+
+        <div class="card kpi-card">
+            <div>
+                <div class="kpi-title">Temperature</div>
+                <div class="kpi-value temp-val" id="currentTemp">--°C</div>
+            </div>
+            <i class="fas fa-temperature-high kpi-icon temp-val"></i>
+        </div>
+
+        <div class="card kpi-card">
+            <div>
+                <div class="kpi-title">Humidity</div>
+                <div class="kpi-value hum-val" id="currentHum">--%</div>
+            </div>
+            <i class="fas fa-tint kpi-icon hum-val"></i>
+        </div>
+        
+        <div class="card kpi-card">
+             <div>
+                <div class="kpi-title">Records</div>
+                <div class="kpi-value" id="totalRecords">0</div>
+            </div>
+            <i class="fas fa-database kpi-icon"></i>
+        </div>
+
+        <div class="card kpi-card">
+            <div>
+               <div class="kpi-title">Status</div>
+               <div class="kpi-value" style="color: #4ade80; font-size: 1.5rem;">ONLINE</div>
+           </div>
+           <i class="fas fa-wifi kpi-icon" style="color:#4ade80"></i>
+       </div>
+
+        <div class="card chart-container">
+            <canvas id="tempChart"></canvas>
+        </div>
+        <div class="card chart-container">
+            <canvas id="humChart"></canvas>
+        </div>
+
+        <div class="card table-container">
+            <h3 style="margin-top:0; font-size: 1rem; color: var(--text-muted);">Recent Data Log</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Date</th>
+                        <th>Temp (°C)</th>
+                        <th>Humidity (%)</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    </tbody>
+            </table>
+        </div>
+    </div>
 
     <script>
-        // YOUR URL (I kept the one you provided in the example)
-        const url = "https://script.google.com/macros/s/AKfycbxNHXBrvVE1VnmEfErhcWeCGHj1aiFVSeToILGIJ6u7CfoAF4LnUTxJmUL4L_5K9NiXBQ/exec";
+        // CONFIGURATION
+        const DATA_URL = "https://script.google.com/macros/s/AKfycbxNHXBrvVE1VnmEfErhcWeCGHj1aiFVSeToILGIJ6u7CfoAF4LnUTxJmUL4L_5K9NiXBQ/exec";
+        const REFRESH_INTERVAL = 30000; // 30 Seconds
 
-        fetch(url)
-            .then(response => response.json())
-            .then(data => {
-                const tableBody = document.querySelector("#dataTable tbody");
-                const status = document.getElementById("status");
-                status.innerText = "Last updated: " + new Date().toLocaleTimeString();
+        // Global Chart Instances
+        let chartTemp, chartHum;
 
-                // Arrays to hold data for charts
-                const labels = [];
-                const temps = [];
-                const hums = [];
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            initDashboard();
+            setInterval(fetchData, REFRESH_INTERVAL);
+        });
 
-                // Loop through data (starting at i=1 to skip headers)
-                for (let i = 1; i < data.length; i++) {
-                    const row = document.createElement("tr");
-                    
-                    // -- PROCESS DATE --
-                    const rawDate = new Date(data[i][0]);
-                    const timeString = rawDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}); // Clean time for graph
-                    const dateString = rawDate.toLocaleString(); // Full date for table
+        async function initDashboard() {
+            await fetchData();
+            // Fade out loader
+            const loader = document.getElementById('fullPageLoader');
+            loader.style.opacity = '0';
+            setTimeout(() => loader.remove(), 500);
+        }
 
-                    // -- PROCESS VALUES --
-                    const temp = data[i][1];
-                    const hum = data[i][2];
+        async function fetchData() {
+            const refreshIcon = document.getElementById('refreshIcon');
+            refreshIcon.classList.add('spin');
 
-                    // Add to Chart Arrays
-                    labels.push(timeString); 
-                    temps.push(temp);
-                    hums.push(hum);
+            try {
+                const response = await fetch(DATA_URL);
+                const data = await response.json();
+                
+                if (!data || data.length < 2) throw new Error("No data");
 
-                    // Add to Table
-                    const dateCell = document.createElement("td"); dateCell.textContent = dateString;
-                    const tempCell = document.createElement("td"); tempCell.textContent = temp;
-                    const humCell = document.createElement("td"); humCell.textContent = hum;
-                    
-                    row.appendChild(dateCell);
-                    row.appendChild(tempCell);
-                    row.appendChild(humCell);
-                    
-                    // Prepend to table so newest is top
-                    tableBody.prepend(row); 
-                }
+                processData(data);
+                
+                // Update timestamp
+                const now = new Date();
+                document.getElementById('lastUpdated').innerText = `Updated: ${now.toLocaleTimeString()}`;
 
-                // 3. GENERATE CHARTS
-                createCharts(labels, temps, hums);
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                document.getElementById("status").innerText = "Error loading data. Check console (F12).";
+            } catch (error) {
+                console.error("Fetch error:", error);
+                document.getElementById('lastUpdated').innerText = "Connection Failed";
+                document.getElementById('lastUpdated').style.color = "#ef4444";
+            } finally {
+                refreshIcon.classList.remove('spin');
+            }
+        }
+
+        function processData(rawData) {
+            // rawData[0] is header. Data starts at index 1.
+            // We want the LATEST data (usually at the bottom of Google Sheet)
+            // But let's check sorting. Usually Google Sheets appends to bottom.
+            
+            const rows = rawData.slice(1); // Remove header
+            const latest = rows[rows.length - 1]; // Get last entry
+
+            // 1. Update KPI Cards
+            document.getElementById('currentTemp').innerText = `${parseFloat(latest[1]).toFixed(1)}°C`;
+            document.getElementById('currentHum').innerText = `${parseFloat(latest[2]).toFixed(1)}%`;
+            document.getElementById('totalRecords').innerText = rows.length;
+
+            // 2. Prepare Data for Charts (Last 20 entries only to keep charts clean)
+            const recentRows = rows.slice(-20); 
+            const labels = recentRows.map(r => new Date(r[0]).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
+            const temps = recentRows.map(r => r[1]);
+            const hums = recentRows.map(r => r[2]);
+
+            updateCharts(labels, temps, hums);
+
+            // 3. Update Table (Show last 50, reversed)
+            const tableBody = document.getElementById('tableBody');
+            tableBody.innerHTML = ""; // Clear existing
+            
+            // Clone and reverse to show newest first
+            [...rows].reverse().slice(0, 50).forEach(row => {
+                const dateObj = new Date(row[0]);
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${dateObj.toLocaleTimeString()}</td>
+                    <td style="color:#94a3b8">${dateObj.toLocaleDateString()}</td>
+                    <td><span style="color:var(--accent-temp)">${row[1]}°</span></td>
+                    <td><span style="color:var(--accent-hum)">${row[2]}%</span></td>
+                `;
+                tableBody.appendChild(tr);
             });
+        }
 
-        function createCharts(labels, temps, hums) {
-            // Temperature Chart
-            new Chart(document.getElementById('tempChart'), {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Temperature (°C)',
-                        data: temps,
-                        borderColor: '#FF5733', // Red/Orange line
-                        backgroundColor: 'rgba(255, 87, 51, 0.2)',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.3 // Smooth curves
-                    }]
+        function updateCharts(labels, temps, hums) {
+            const ctxTemp = document.getElementById('tempChart').getContext('2d');
+            const ctxHum = document.getElementById('humChart').getContext('2d');
+
+            // Create gradients
+            const gradTemp = ctxTemp.createLinearGradient(0, 0, 0, 400);
+            gradTemp.addColorStop(0, 'rgba(245, 158, 11, 0.5)'); // Amber
+            gradTemp.addColorStop(1, 'rgba(245, 158, 11, 0)');
+
+            const gradHum = ctxHum.createLinearGradient(0, 0, 0, 400);
+            gradHum.addColorStop(0, 'rgba(14, 165, 233, 0.5)'); // Blue
+            gradHum.addColorStop(1, 'rgba(14, 165, 233, 0)');
+
+            // Config shared options
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                        titleColor: '#fff',
+                        bodyColor: '#cbd5e1',
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderWidth: 1
+                    }
                 },
-                options: {
-                    responsive: true,
-                    plugins: { title: { display: true, text: 'Temperature History' } }
-                }
-            });
-
-            // Humidity Chart
-            new Chart(document.getElementById('humChart'), {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Humidity (%)',
-                        data: hums,
-                        borderColor: '#009879', // Green/Teal line
-                        backgroundColor: 'rgba(0, 152, 121, 0.2)',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.3
-                    }]
+                scales: {
+                    x: { grid: { display: false }, ticks: { color: '#64748b' } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b' } }
                 },
-                options: {
-                    responsive: true,
-                    plugins: { title: { display: true, text: 'Humidity History' } }
+                elements: {
+                    line: { tension: 0.4 }, // Smooth curves
+                    point: { radius: 2, hoverRadius: 6 }
                 }
-            });
+            };
+
+            // Initialize or Update Temp Chart
+            if (chartTemp) {
+                chartTemp.data.labels = labels;
+                chartTemp.data.datasets[0].data = temps;
+                chartTemp.update();
+            } else {
+                chartTemp = new Chart(ctxTemp, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Temperature',
+                            data: temps,
+                            borderColor: '#f59e0b',
+                            backgroundColor: gradTemp,
+                            fill: true,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: commonOptions
+                });
+            }
+
+            // Initialize or Update Hum Chart
+            if (chartHum) {
+                chartHum.data.labels = labels;
+                chartHum.data.datasets[0].data = hums;
+                chartHum.update();
+            } else {
+                chartHum = new Chart(ctxHum, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Humidity',
+                            data: hums,
+                            borderColor: '#0ea5e9',
+                            backgroundColor: gradHum,
+                            fill: true,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: commonOptions
+                });
+            }
         }
     </script>
 </body>
