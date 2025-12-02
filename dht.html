@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 Weather Station</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #f4f4f9; color: #333; }
+        
+        /* Container for the charts */
+        .chart-container {
+            width: 80%;
+            margin: 20px auto;
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+        }
+        .chart-box {
+            width: 48%;
+            background: white;
+            padding: 15px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+
+        /* Table Styling */
+        table { margin: 40px auto; border-collapse: collapse; width: 80%; background: white; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
+        th, td { padding: 12px 15px; border-bottom: 1px solid #ddd; }
+        th { background-color: #009879; color: white; }
+        tr:nth-child(even) { background-color: #f3f3f3; }
+        tr:hover { background-color: #f1f1f1; }
+        
+        h1 { margin-top: 30px; }
+        .status { margin-bottom: 20px; color: #666; font-style: italic; }
+        
+        /* Responsive design for small screens */
+        @media (max-width: 768px) {
+            .chart-container { flex-direction: column; }
+            .chart-box { width: 90%; margin: 10px auto; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ESP32 Weather Dashboard</h1>
+    <div class="status" id="status">Loading data...</div>
+
+    <div class="chart-container">
+        <div class="chart-box">
+            <canvas id="tempChart"></canvas>
+        </div>
+        <div class="chart-box">
+            <canvas id="humChart"></canvas>
+        </div>
+    </div>
+
+    <table id="dataTable">
+        <thead>
+            <tr>
+                <th>Date/Time</th>
+                <th>Temperature (°C)</th>
+                <th>Humidity (%)</th>
+            </tr>
+        </thead>
+        <tbody>
+            </tbody>
+    </table>
+
+    <script>
+        // YOUR URL (I kept the one you provided in the example)
+        const url = "https://script.google.com/macros/s/AKfycbxNHXBrvVE1VnmEfErhcWeCGHj1aiFVSeToILGIJ6u7CfoAF4LnUTxJmUL4L_5K9NiXBQ/exec";
+
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                const tableBody = document.querySelector("#dataTable tbody");
+                const status = document.getElementById("status");
+                status.innerText = "Last updated: " + new Date().toLocaleTimeString();
+
+                // Arrays to hold data for charts
+                const labels = [];
+                const temps = [];
+                const hums = [];
+
+                // Loop through data (starting at i=1 to skip headers)
+                for (let i = 1; i < data.length; i++) {
+                    const row = document.createElement("tr");
+                    
+                    // -- PROCESS DATE --
+                    const rawDate = new Date(data[i][0]);
+                    const timeString = rawDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}); // Clean time for graph
+                    const dateString = rawDate.toLocaleString(); // Full date for table
+
+                    // -- PROCESS VALUES --
+                    const temp = data[i][1];
+                    const hum = data[i][2];
+
+                    // Add to Chart Arrays
+                    labels.push(timeString); 
+                    temps.push(temp);
+                    hums.push(hum);
+
+                    // Add to Table
+                    const dateCell = document.createElement("td"); dateCell.textContent = dateString;
+                    const tempCell = document.createElement("td"); tempCell.textContent = temp;
+                    const humCell = document.createElement("td"); humCell.textContent = hum;
+                    
+                    row.appendChild(dateCell);
+                    row.appendChild(tempCell);
+                    row.appendChild(humCell);
+                    
+                    // Prepend to table so newest is top
+                    tableBody.prepend(row); 
+                }
+
+                // 3. GENERATE CHARTS
+                createCharts(labels, temps, hums);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById("status").innerText = "Error loading data. Check console (F12).";
+            });
+
+        function createCharts(labels, temps, hums) {
+            // Temperature Chart
+            new Chart(document.getElementById('tempChart'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Temperature (°C)',
+                        data: temps,
+                        borderColor: '#FF5733', // Red/Orange line
+                        backgroundColor: 'rgba(255, 87, 51, 0.2)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3 // Smooth curves
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { title: { display: true, text: 'Temperature History' } }
+                }
+            });
+
+            // Humidity Chart
+            new Chart(document.getElementById('humChart'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Humidity (%)',
+                        data: hums,
+                        borderColor: '#009879', // Green/Teal line
+                        backgroundColor: 'rgba(0, 152, 121, 0.2)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { title: { display: true, text: 'Humidity History' } }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
